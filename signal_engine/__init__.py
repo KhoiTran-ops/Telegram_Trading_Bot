@@ -1,0 +1,2 @@
+"""Signal-engine extension point."""
+

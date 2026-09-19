@@ -1,0 +1,11 @@
+# Pin exact versions only after this set installs and passes tests together.
+APScheduler
+httpx
+mplfinance
+pandas
+pydantic-settings
+python-telegram-bot
+PyYAML
+pytest
+pytest-asyncio
+respx
