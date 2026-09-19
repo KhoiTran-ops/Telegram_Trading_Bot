@@ -1,0 +1,42 @@
+from common.config import Settings
+from common.watchlist import WatchlistConfig
+from bot.application import create_application
+
+
+def test_application_registers_commands_without_dnse_credentials(tmp_path) -> None:
+    watchlist_path = tmp_path / "watchlist.yaml"
+    watchlist_path.write_text(
+        "confirmed: false\nwatchlist: [HPG]\nrealtime_universe: []\n",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        telegram_bot_token="123456:abcdefghijklmnopqrstuvwxyzABCDEFG",
+        watchlist_path=watchlist_path,
+        _env_file=None,
+    )
+
+    application = create_application(settings)
+
+    assert application.bot_data["watchlist"] == WatchlistConfig(
+        confirmed=False,
+        watchlist=("HPG",),
+        realtime_universe=(),
+    )
+    assert application.bot_data["market_data"].configured is False
+
+    registered_commands = {
+        command
+        for handler in application.handlers[0]
+        for command in getattr(handler, "commands", ())
+    }
+    assert {
+        "start",
+        "help",
+        "watchlist",
+        "price",
+        "market",
+        "signal",
+        "check",
+        "alert",
+        "scan",
+    } <= registered_commands

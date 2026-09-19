@@ -1,11 +1,9 @@
-# Pin exact versions only after this set installs and passes tests together.
-APScheduler
-httpx
-mplfinance
-pandas
-pydantic-settings
-python-telegram-bot
-PyYAML
-pytest
-pytest-asyncio
-respx
+# Direct dependencies verified for the currently implemented bot shell.
+pydantic-settings==2.15.0
+python-telegram-bot==22.8
+PyYAML==6.0.3
+pytest==9.1.1
+pytest-asyncio==1.4.0
+
+# Add and pin APScheduler, mplfinance, pandas, and respx only when their
+# corresponding scheduler, chart, and DNSE-client slices are implemented.

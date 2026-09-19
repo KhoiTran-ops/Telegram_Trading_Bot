@@ -1,3 +1,5 @@
+confirmed: false
+
 watchlist:
   - HPG
   - FPT
@@ -11,4 +13,3 @@ realtime_universe:
   - VCB
   - MWG
   - SSI
-
