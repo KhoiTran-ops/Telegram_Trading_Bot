@@ -2,7 +2,7 @@ import pytest
 
 from data.dnse_market import (
     DNSEInstrument, DNSEMarketDataProvider, DNSESynchronizer,
-    parse_foreign_trading, parse_ohlc,
+    foreign_history_window, parse_foreign_trading, parse_ohlc,
 )
 from data.db.market_store import MarketStore
 
@@ -125,3 +125,18 @@ def test_foreign_parser_preserves_board_snapshots() -> None:
     assert rows[0]["board_id"] == "G1"
     assert rows[0]["buy_volume"] == 413262
     assert rows[0]["sell_value"] == 31660601200
+
+
+def test_foreign_history_window_never_requests_more_than_two_years() -> None:
+    now = 2_000_000_000
+    two_year_floor = now - 730 * 24 * 60 * 60
+
+    assert foreign_history_window(now, None, listed_at=1_000_000_000) == (
+        now - 1_800, now
+    )
+    assert foreign_history_window(
+        now, (two_year_floor + 3_600) * 1000, listed_at=1_000_000_000
+    ) == (two_year_floor + 1_799, two_year_floor + 3_599)
+    assert foreign_history_window(
+        now, two_year_floor * 1000, listed_at=1_000_000_000
+    ) is None

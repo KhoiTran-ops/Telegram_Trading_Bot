@@ -6,6 +6,6 @@ tzdata==2026.4
 PyYAML==6.0.3
 pytest==9.1.1
 pytest-asyncio==1.4.0
+matplotlib==3.10.6
 
-# Add and pin APScheduler, mplfinance, pandas, and respx only when their
-# corresponding scheduler, chart, and DNSE-client slices are implemented.
+# Add and pin other optional packages only when their slices are implemented.

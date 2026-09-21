@@ -36,9 +36,14 @@ def test_application_registers_commands_without_dnse_credentials(tmp_path) -> No
         "price",
         "market",
         "signal",
-        "check",
-        "alert",
         "scan",
+        "chart",
+        "buy",
+        "sell",
+        "tinhieu",
+        "thitruong",
+        "hieuqua",
+        "chatid",
     } <= registered_commands
 
 

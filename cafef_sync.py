@@ -30,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     daily = subparsers.add_parser("eod-fallback")
     daily.add_argument("--date", type=_date)
     financial = subparsers.add_parser("backfill-financials")
-    financial.add_argument("--earliest-year", type=int, default=2000)
+    financial.add_argument("--quarters", type=int, default=8)
     return parser
 
 
@@ -49,8 +49,7 @@ def run(args: argparse.Namespace) -> None:
         return
     if args.command == "backfill-financials":
         result = sync_financial_history(
-            client, store, latest_year=ho_chi_minh_now().year,
-            earliest_year=args.earliest_year,
+            client, store, max_quarters=args.quarters,
         )
         print(json.dumps(result.__dict__))
         return

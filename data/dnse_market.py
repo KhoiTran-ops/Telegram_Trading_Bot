@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 MARKETS = {"STO": "HOSE", "STX": "HNX", "UPX": "UPCOM"}
 VIETNAM = ZoneInfo("Asia/Ho_Chi_Minh")
 BENCHMARK_SYMBOL = "VNINDEX"
+FOREIGN_LOOKBACK_SECONDS = 730 * 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,20 @@ def parse_foreign_trading(payload: dict[str, object]) -> list[dict[str, object]]
             "buy_possible_quantity": row.get("foreignerBuyPossibleQuantity"),
         })
     return parsed
+
+
+def foreign_history_window(now_ts: int, earliest_ms: int | None, *,
+                           listed_at: int) -> tuple[int, int] | None:
+    """Return the next backward request, bounded to the latest two years."""
+    floor = now_ts - FOREIGN_LOOKBACK_SECONDS
+    if earliest_ms is not None:
+        end = earliest_ms // 1000 - 1
+        if end < floor:
+            return None
+    else:
+        end = now_ts
+    start = max(floor, listed_at or floor, end - 1_800)
+    return (start, end) if start <= end else None
 
 
 class DNSEGateway:
@@ -283,9 +298,16 @@ class DNSEMarketService:
                             f"dnse:foreign:complete:{instrument.symbol}"
                         ) == "1":
                             continue
-                        end = (earliest // 1000 - 1) if earliest else int(now.timestamp())
-                        listed = instrument.listed_at or 946_684_800
-                        start = max(listed, end - 1_800)
+                        window = foreign_history_window(
+                            int(now.timestamp()), earliest,
+                            listed_at=instrument.listed_at,
+                        )
+                        if window is None:
+                            self.store.set_checkpoint(
+                                f"dnse:foreign:complete:{instrument.symbol}", "1"
+                            )
+                            continue
+                        start, end = window
                         history = True
                     if start > end:
                         continue

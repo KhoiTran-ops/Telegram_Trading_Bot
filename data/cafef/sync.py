@@ -110,7 +110,9 @@ def sync_catalog(client: CafeFClient, store: MarketStore) -> int:
 
 
 def sync_financial_history(client: CafeFClient, store: MarketStore, *,
-                           latest_year: int, earliest_year: int = 2000) -> SyncResult:
+                           max_quarters: int = 8) -> SyncResult:
+    if max_quarters < 1:
+        raise ValueError("max_quarters must be positive")
     saved = rejected = requests = 0
     for symbol, _exchange in store.list_instruments():
         periods: list[dict[str, object]] = []
@@ -125,16 +127,22 @@ def sync_financial_history(client: CafeFClient, store: MarketStore, *,
                 break
             requests += 1
             periods.extend(block)
-            if page * 4 >= total or not block:
+            if page * 4 >= min(total, max_quarters) or not block:
                 break
             page += 1
+        periods = sorted(
+            periods,
+            key=lambda period: (
+                int(period["fiscal_year"]), int(period["fiscal_quarter"])
+            ),
+            reverse=True,
+        )[:max_quarters]
         store.upsert_financial_periods(
             periods, source="https://apiweb.cafef.vn/api/v1/BCTC/GetReportSummary"
         )
         available_periods = {
             (int(period["fiscal_year"]), int(period["fiscal_quarter"]))
             for period in periods
-            if int(period["fiscal_year"]) >= earliest_year
         }
         for statement_type in STATEMENT_TYPES:
             ordered = sorted(available_periods, reverse=True)

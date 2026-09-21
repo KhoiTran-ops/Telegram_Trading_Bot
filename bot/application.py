@@ -5,10 +5,16 @@ from collections.abc import Sequence
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from bot.handlers import (
+    backtest_command,
+    chat_id_command,
+    chart_command,
     error_handler,
     help_command,
+    filtered_scan_command,
     market_command,
     price_command,
+    scan_command,
+    signal_command,
     start_command,
     strategy_not_configured_command,
     unknown_command,
@@ -19,6 +25,7 @@ from common.watchlist import load_watchlist
 from data.providers import FailoverMarketDataProvider, MarketDataProvider
 from data.db.market_store import MarketStore
 from data.dnse_market import DNSEMarketDataProvider, DNSEMarketService
+from signal_engine.service import StrategyService
 
 
 def create_application(
@@ -39,18 +46,21 @@ def create_application(
         application.bot_data["market_data_service"] = service
     application.bot_data["watchlist"] = load_watchlist(settings.watchlist_path)
     application.bot_data["market_data"] = FailoverMarketDataProvider(market_providers)
+    application.bot_data["strategy_service"] = StrategyService(settings.database_path)
+    application.bot_data["summary_chat_ids"] = settings.summary_chat_ids
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("watchlist", watchlist_command))
+    application.add_handler(CommandHandler("chatid", chat_id_command))
     application.add_handler(CommandHandler("price", price_command))
     application.add_handler(CommandHandler("market", market_command))
-    application.add_handler(
-        CommandHandler(
-            ["signal", "check", "alert", "scan"],
-            strategy_not_configured_command,
-        )
-    )
+    application.add_handler(CommandHandler("thitruong", market_command))
+    application.add_handler(CommandHandler("signal", signal_command))
+    application.add_handler(CommandHandler("scan", scan_command))
+    application.add_handler(CommandHandler(["buy", "mua", "sell", "ban", "tinhieu"], filtered_scan_command))
+    application.add_handler(CommandHandler("chart", chart_command))
+    application.add_handler(CommandHandler("hieuqua", backtest_command))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_error_handler(error_handler)
     return application
