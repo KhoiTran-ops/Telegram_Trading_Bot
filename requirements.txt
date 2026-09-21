@@ -1,6 +1,8 @@
 # Direct dependencies verified for the currently implemented bot shell.
 pydantic-settings==2.15.0
 python-telegram-bot==22.8
+dnse==0.5.0
+tzdata==2026.4
 PyYAML==6.0.3
 pytest==9.1.1
 pytest-asyncio==1.4.0

@@ -17,6 +17,8 @@ from bot.handlers import (
 from common.config import Settings
 from common.watchlist import load_watchlist
 from data.providers import FailoverMarketDataProvider, MarketDataProvider
+from data.db.market_store import MarketStore
+from data.dnse_market import DNSEMarketDataProvider, DNSEMarketService
 
 
 def create_application(
@@ -24,9 +26,19 @@ def create_application(
     providers: Sequence[MarketDataProvider] = (),
 ) -> Application:
     """Build the bot; providers are ordered from primary to last fallback."""
-    application = Application.builder().token(settings.telegram_bot_token).build()
+    market_providers = list(providers)
+    builder = Application.builder().token(settings.telegram_bot_token)
+    if settings.dnse_configured:
+        store = MarketStore(settings.database_path)
+        store.initialize()
+        service = DNSEMarketService(settings.dnse_api_key, settings.dnse_api_secret, store)
+        market_providers.insert(0, DNSEMarketDataProvider(store))
+
+    application = builder.build()
+    if settings.dnse_configured:
+        application.bot_data["market_data_service"] = service
     application.bot_data["watchlist"] = load_watchlist(settings.watchlist_path)
-    application.bot_data["market_data"] = FailoverMarketDataProvider(providers)
+    application.bot_data["market_data"] = FailoverMarketDataProvider(market_providers)
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))

@@ -6,7 +6,10 @@ import logging
 import re
 
 
-LOG_FIELDS = ("event", "entry_point", "request_id", "provider", "operation", "error_type")
+LOG_FIELDS = (
+    "event", "entry_point", "request_id", "provider", "operation", "error_type",
+    "exchange", "saved", "rejected", "window_start", "window_end",
+)
 TELEGRAM_BOT_URL_PATTERN = re.compile(
     r"(https://api\.telegram\.org/bot)[^/\s]+",
     flags=re.IGNORECASE,
