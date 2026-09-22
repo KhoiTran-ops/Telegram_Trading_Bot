@@ -73,6 +73,7 @@ class StrategyRepository:
                 SELECT b.symbol,b.open,b.close,b.volume
                 FROM ohlcv_bars b JOIN instruments i ON i.symbol=b.symbol
                 WHERE b.timeframe='1m' AND b.ts>=? AND b.ts<?
+                  AND i.exchange='HOSE'
                 ORDER BY b.symbol,b.ts
             """, (day_start, day_end)).fetchall()
             reference_ts = db.execute(
@@ -263,3 +264,38 @@ class StrategyRepository:
             item.daily_bars, item.foreign_rows,
         ), reverse=True)
         return coverage[:limit]
+
+    def scan_symbols(self, limit: int | None = 200) -> list[str]:
+        """Rank the scan universe by exchange and recent traded value.
+
+        HOSE is intentionally considered before HNX and UPCOM. Within an
+        exchange, liquid names rank first, which naturally puts the VN100
+        large/mid-cap universe near the front without treating price movement
+        alone as importance.
+        """
+        with self._connect() as db:
+            rows = db.execute("""
+                SELECT i.symbol
+                FROM instruments i
+                WHERE EXISTS (
+                    SELECT 1 FROM ohlcv_bars enough
+                    WHERE enough.symbol=i.symbol AND enough.timeframe='1D'
+                    ORDER BY enough.ts DESC LIMIT 1 OFFSET 59
+                )
+                ORDER BY CASE UPPER(i.exchange)
+                    WHEN 'HOSE' THEN 0 WHEN 'HNX' THEN 1 ELSE 2 END,
+                    COALESCE((
+                        SELECT AVG(recent.close * 1000.0 * recent.volume)
+                        FROM ohlcv_bars recent
+                        WHERE recent.symbol=i.symbol AND recent.timeframe='1D'
+                          AND recent.ts >= COALESCE((
+                              SELECT boundary.ts FROM ohlcv_bars boundary
+                              WHERE boundary.symbol=i.symbol
+                                AND boundary.timeframe='1D'
+                              ORDER BY boundary.ts DESC LIMIT 1 OFFSET 19
+                          ), 0)
+                    ), 0) DESC,
+                    i.symbol
+                LIMIT ?
+            """, (-1 if limit is None else max(1, limit),)).fetchall()
+        return [str(row[0]) for row in rows]

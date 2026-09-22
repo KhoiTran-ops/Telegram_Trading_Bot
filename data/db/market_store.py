@@ -82,6 +82,10 @@ class MarketStore:
                 id INTEGER PRIMARY KEY, dataset TEXT NOT NULL, record_key TEXT,
                 reason TEXT NOT NULL, raw_json TEXT NOT NULL, detected_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS notification_subscriptions (
+                chat_id INTEGER PRIMARY KEY,
+                created_at TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS idx_eod_symbol_date
                 ON eod_prices(symbol, trade_date);
             CREATE INDEX IF NOT EXISTS idx_foreign_symbol_date
@@ -263,6 +267,14 @@ class MarketStore:
                 WHERE symbol=? AND timeframe='1m' ORDER BY ts DESC LIMIT 1
             """, (symbol.upper(),)).fetchone()
         return (float(row[0]), int(row[1])) if row else None
+
+    def latest_reference_price(self, symbol: str, before_ts: int) -> float | None:
+        with self._connect() as db:
+            row = db.execute("""
+                SELECT close FROM ohlcv_bars
+                WHERE symbol=? AND timeframe='1D' AND ts<? ORDER BY ts DESC LIMIT 1
+            """, (symbol.upper(), before_ts)).fetchone()
+        return float(row[0]) if row else None
 
     def upsert_foreign_snapshots(self, rows: Iterable[dict[str, object]],
                                  *, source: str) -> int:
@@ -476,6 +488,29 @@ class MarketStore:
     def anomaly_count(self) -> int:
         with self._connect() as db:
             return db.execute("SELECT COUNT(*) FROM data_anomalies").fetchone()[0]
+
+    def subscribe_notifications(self, chat_id: int) -> bool:
+        with self._connect() as db:
+            cursor = db.execute(
+                "INSERT OR IGNORE INTO notification_subscriptions VALUES (?,?)",
+                (int(chat_id), datetime.now(UTC).isoformat()),
+            )
+        return cursor.rowcount > 0
+
+    def unsubscribe_notifications(self, chat_id: int) -> bool:
+        with self._connect() as db:
+            cursor = db.execute(
+                "DELETE FROM notification_subscriptions WHERE chat_id=?",
+                (int(chat_id),),
+            )
+        return cursor.rowcount > 0
+
+    def notification_chat_ids(self) -> tuple[int, ...]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT chat_id FROM notification_subscriptions ORDER BY created_at"
+            ).fetchall()
+        return tuple(int(row[0]) for row in rows)
 
     def statistics(self) -> dict[str, object]:
         with self._connect() as db:

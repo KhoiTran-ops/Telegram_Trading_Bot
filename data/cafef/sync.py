@@ -81,7 +81,7 @@ class CafeFSynchronizer:
             saved += added
             rejected += bad
             self.store.set_checkpoint(key, str(page))
-            logger.info("CafeF page synchronized", extra={
+            logger.debug("CafeF page synchronized", extra={
                 "event": "cafef_page_synchronized", "provider": "cafef",
                 "operation": dataset,
             })
@@ -177,7 +177,7 @@ def sync_financial_history(client: CafeFClient, store: MarketStore, *,
                     )
                 else:
                     rejected += 1
-                logger.info("CafeF financial block synchronized", extra={
+                logger.debug("CafeF financial block synchronized", extra={
                     "event": "cafef_financial_synchronized", "provider": "cafef",
                     "operation": statement_type,
                 })

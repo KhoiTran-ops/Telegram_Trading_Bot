@@ -2,19 +2,22 @@
 
 from collections.abc import Sequence
 
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from bot.handlers import (
     backtest_command,
-    chat_id_command,
     chart_command,
+    chart_callback,
     error_handler,
     help_command,
     filtered_scan_command,
     market_command,
+    notifications_off_command,
+    notifications_on_command,
     price_command,
     scan_command,
     signal_command,
+    signal_detail_callback,
     start_command,
     strategy_not_configured_command,
     unknown_command,
@@ -35,9 +38,9 @@ def create_application(
     """Build the bot; providers are ordered from primary to last fallback."""
     market_providers = list(providers)
     builder = Application.builder().token(settings.telegram_bot_token)
+    store = MarketStore(settings.database_path)
+    store.initialize()
     if settings.dnse_configured:
-        store = MarketStore(settings.database_path)
-        store.initialize()
         service = DNSEMarketService(settings.dnse_api_key, settings.dnse_api_secret, store)
         market_providers.insert(0, DNSEMarketDataProvider(store))
 
@@ -47,19 +50,22 @@ def create_application(
     application.bot_data["watchlist"] = load_watchlist(settings.watchlist_path)
     application.bot_data["market_data"] = FailoverMarketDataProvider(market_providers)
     application.bot_data["strategy_service"] = StrategyService(settings.database_path)
-    application.bot_data["summary_chat_ids"] = settings.summary_chat_ids
+    application.bot_data["market_store"] = store
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("watchlist", watchlist_command))
-    application.add_handler(CommandHandler("chatid", chat_id_command))
+    application.add_handler(CommandHandler("thongbao", notifications_on_command))
+    application.add_handler(CommandHandler("huythongbao", notifications_off_command))
     application.add_handler(CommandHandler("price", price_command))
     application.add_handler(CommandHandler("market", market_command))
     application.add_handler(CommandHandler("thitruong", market_command))
     application.add_handler(CommandHandler("signal", signal_command))
+    application.add_handler(CallbackQueryHandler(signal_detail_callback, pattern=r"^signal_detail\|"))
     application.add_handler(CommandHandler("scan", scan_command))
     application.add_handler(CommandHandler(["buy", "mua", "sell", "ban", "tinhieu"], filtered_scan_command))
     application.add_handler(CommandHandler("chart", chart_command))
+    application.add_handler(CallbackQueryHandler(chart_callback, pattern=r"^chart\|"))
     application.add_handler(CommandHandler("hieuqua", backtest_command))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_error_handler(error_handler)

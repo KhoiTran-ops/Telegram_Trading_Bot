@@ -16,4 +16,3 @@ def test_market_summary_calculates_index_move_and_highlights() -> None:
     assert summary.advancers == 1
     assert summary.decliners == 1
     assert summary.highlights[0].symbol == "AAA"
-

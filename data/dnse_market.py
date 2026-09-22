@@ -214,7 +214,10 @@ class DNSEMarketDataProvider:
         if result is None:
             raise ProviderUnavailableError(f"no DNSE data for {normalized}")
         price, timestamp = result
-        return MarketPrice(normalized, price, datetime.fromtimestamp(timestamp, UTC))
+        local = datetime.fromtimestamp(timestamp, VIETNAM)
+        day_start = int(local.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        reference = self.store.latest_reference_price(normalized, day_start)
+        return MarketPrice(normalized, price, datetime.fromtimestamp(timestamp, UTC), reference)
 
 
 class DNSEMarketService:

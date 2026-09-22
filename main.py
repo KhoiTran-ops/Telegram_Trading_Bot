@@ -32,6 +32,7 @@ async def run(application) -> None:
     service = application.bot_data.get("market_data_service")
     market_task = None
     summary_task = None
+    snapshot_task = None
     initialized = False
     polling = False
     started = False
@@ -40,11 +41,27 @@ async def run(application) -> None:
         market_task = asyncio.create_task(service.run(), name="dnse-market-data")
         market_task.add_done_callback(_log_task_result)
         application.bot_data["market_data_task"] = market_task
-    summary_chat_ids = application.bot_data.get("summary_chat_ids", ())
-    if summary_chat_ids:
-        summary_task = asyncio.create_task(
-            market_summary_loop(application, summary_chat_ids), name="market-summary-scheduler"
-        )
+    summary_task = asyncio.create_task(
+        market_summary_loop(application), name="market-summary-scheduler"
+    )
+    strategy_service = application.bot_data["strategy_service"]
+
+    async def refresh_signal_snapshots() -> None:
+        while True:
+            try:
+                count = await asyncio.to_thread(strategy_service.refresh_scan_snapshot)
+                logger.info("signal snapshot refreshed", extra={
+                    "event": "signal_snapshot_refreshed", "saved": count,
+                })
+            except Exception as error:
+                logger.warning("signal snapshot refresh failed: %s", error, extra={
+                    "event": "signal_snapshot_failed", "error_type": type(error).__name__,
+                })
+            await asyncio.sleep(60)
+
+    snapshot_task = asyncio.create_task(
+        refresh_signal_snapshots(), name="signal-snapshot-scheduler"
+    )
 
     try:
         await application.initialize()
@@ -73,6 +90,10 @@ async def run(application) -> None:
             summary_task.cancel()
         if summary_task is not None:
             await asyncio.gather(summary_task, return_exceptions=True)
+        if snapshot_task is not None and not snapshot_task.done():
+            snapshot_task.cancel()
+        if snapshot_task is not None:
+            await asyncio.gather(snapshot_task, return_exceptions=True)
 
 
 def main() -> None:

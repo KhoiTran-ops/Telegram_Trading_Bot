@@ -193,12 +193,19 @@ def evaluate_technical(bars: list[Bar], index_bars: list[Bar]) -> TechnicalResul
     }, tuple(warnings), tuple(missing))
 
 
-def run_backtest(symbol: str, bars: list[Bar], index_bars: list[Bar]) -> BacktestResult:
+def run_backtest(symbol: str, bars: list[Bar], index_bars: list[Bar], *,
+                 as_of_ts: int | None = None) -> BacktestResult:
+    end_ts = as_of_ts if as_of_ts is not None else max(
+        (bar.ts for bar in bars), default=0
+    )
+    start_ts = end_ts - 730 * 86_400
+    bars = [bar for bar in bars if start_ts <= bar.ts <= end_ts]
+    index_bars = [bar for bar in index_bars if start_ts <= bar.ts <= end_ts]
     cleaned, excluded = clean_adjusted_segments(bars)
     if len(cleaned) < 60:
         return BacktestResult(symbol, "TECHNICAL_ONLY", len(cleaned), (), None, None,
                               None, None, None, len(excluded),
-                              ("insufficient_price_history",))
+                              ("two_year_window", "insufficient_price_history"))
     trades: list[Trade] = []
     position: tuple[int, float, float, float] | None = None
     equity = 1.0
@@ -251,6 +258,7 @@ def run_backtest(symbol: str, bars: list[Bar], index_bars: list[Bar]) -> Backtes
     return BacktestResult(
         symbol, "TECHNICAL_ONLY", len(cleaned), tuple(trades), total_return,
         annualized, buy_hold, win_rate, max_drawdown, len(excluded),
-        ("fundamentals_excluded_no_publication_timestamp",
+        ("two_year_window",
+         "fundamentals_excluded_no_publication_timestamp",
          "fees_slippage_portfolio_rules_excluded"),
     )

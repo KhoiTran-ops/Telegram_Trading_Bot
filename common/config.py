@@ -1,13 +1,10 @@
 """Environment-backed application configuration."""
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
-
-
-SummaryChatIds = Annotated[tuple[int, ...], NoDecode]
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -26,7 +23,6 @@ class Settings(BaseSettings):
     database_path: Path = Path("var/market_data.db")
     watchlist_path: Path = Path("watchlist.yaml")
     timezone: str = "Asia/Ho_Chi_Minh"
-    summary_chat_ids: SummaryChatIds = ()
 
     @field_validator("telegram_bot_token")
     @classmethod
@@ -55,14 +51,3 @@ class Settings(BaseSettings):
     @property
     def dnse_configured(self) -> bool:
         return self.dnse_api_key is not None and self.dnse_api_secret is not None
-
-    @field_validator("summary_chat_ids", mode="before")
-    @classmethod
-    def parse_summary_chat_ids(cls, value: Any) -> tuple[int, ...]:
-        if value is None or value == "":
-            return ()
-        if isinstance(value, str):
-            values = (int(item.strip()) for item in value.split(",") if item.strip())
-        else:
-            values = (int(item) for item in value)
-        return tuple(dict.fromkeys(values))

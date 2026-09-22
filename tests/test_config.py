@@ -30,7 +30,6 @@ def test_settings_load_required_values_and_safe_defaults(tmp_path: Path) -> None
 
     assert settings.timezone == "Asia/Ho_Chi_Minh"
     assert settings.database_path == tmp_path / "market.db"
-    assert settings.summary_chat_ids == ()
     assert settings.dnse_configured is True
 
 
@@ -49,15 +48,3 @@ def test_settings_reject_partial_dnse_credentials(
             dnse_api_secret=dnse_api_secret,
             _env_file=None,
         )
-
-
-def test_summary_chat_ids_are_parsed_from_comma_separated_value() -> None:
-    settings = Settings(
-        telegram_bot_token="telegram-token",
-        dnse_api_key="dnse-key",
-        dnse_api_secret="dnse-secret",
-        summary_chat_ids="123, -456,123",
-        _env_file=None,
-    )
-
-    assert settings.summary_chat_ids == (123, -456)

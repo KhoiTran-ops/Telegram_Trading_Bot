@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from threading import Lock
 from zoneinfo import ZoneInfo
 
 from signal_engine.engine import BacktestResult, TechnicalResult, evaluate_technical, run_backtest
@@ -32,6 +33,8 @@ class SignalEvaluation:
 class StrategyService:
     def __init__(self, database: Path) -> None:
         self.repository = StrategyRepository(database)
+        self._scan_snapshot: tuple[SignalEvaluation, ...] = ()
+        self._scan_lock = Lock()
 
     def evaluate(self, symbol: str, *, now: datetime | None = None) -> SignalEvaluation:
         normalized = symbol.strip().upper()
@@ -80,16 +83,29 @@ class StrategyService:
             fundamentals, foreign, sector_policy, tuple(sorted(set(missing))),
         )
 
-    def scan(self, *, limit: int = 10) -> list[SignalEvaluation]:
-        symbols = self.repository.best_covered_symbols(limit)
-        return [self.evaluate(item.symbol) for item in symbols]
+    def scan(self, *, limit: int | None = 10) -> list[SignalEvaluation]:
+        if limit is None and self._scan_snapshot:
+            return list(self._scan_snapshot)
+        symbols = self.repository.scan_symbols(limit)
+        results = [self.evaluate(symbol) for symbol in symbols]
+        if limit is None:
+            self._scan_snapshot = tuple(results)
+        return results
+
+    def refresh_scan_snapshot(self) -> int:
+        with self._scan_lock:
+            symbols = self.repository.scan_symbols(None)
+            results = tuple(self.evaluate(symbol) for symbol in symbols)
+            self._scan_snapshot = results
+        return len(results)
 
     def chart_bars(self, symbol: str):
         return self.repository.bars(symbol.upper())
 
     def backtest(self, symbol: str) -> BacktestResult:
         return run_backtest(symbol.upper(), self.repository.bars(symbol.upper()),
-                            self.repository.bars("VNINDEX"))
+                            self.repository.bars("VNINDEX"),
+                            as_of_ts=int(datetime.now(VIETNAM).timestamp()))
 
     def market_summary(self, *, now: datetime | None = None,
                        session: str = "FULL_DAY") -> tuple[MarketSummary, list]:

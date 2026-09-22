@@ -38,3 +38,14 @@ def test_signal_without_price_history_reports_not_available(tmp_path) -> None:
 
     assert result.action == "NOT_AVAILABLE"
     assert "price_history" in result.missing
+
+
+def test_full_scan_uses_refreshed_snapshot_without_recalculation(tmp_path) -> None:
+    service = StrategyService(tmp_path / "market.db")
+    service.repository.scan_symbols = lambda limit=None: ["AAA", "BBB"]
+    calls = []
+    service.evaluate = lambda symbol: calls.append(symbol) or symbol
+
+    assert service.refresh_scan_snapshot() == 2
+    assert service.scan(limit=None) == ["AAA", "BBB"]
+    assert calls == ["AAA", "BBB"]

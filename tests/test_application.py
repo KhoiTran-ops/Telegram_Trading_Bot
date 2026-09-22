@@ -43,7 +43,8 @@ def test_application_registers_commands_without_dnse_credentials(tmp_path) -> No
         "tinhieu",
         "thitruong",
         "hieuqua",
-        "chatid",
+        "thongbao",
+        "huythongbao",
     } <= registered_commands
 
 

@@ -42,3 +42,6 @@ def configure_logging(level: int = logging.INFO) -> None:
     logging.basicConfig(level=level, handlers=[handler], force=True)
     for noisy_logger in ("httpx", "httpcore", "telegram"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+    # The SDK retries closed market streams by itself. Logging every reconnect
+    # floods the runtime log without requiring operator action.
+    logging.getLogger("dnse.stream").setLevel(logging.ERROR)

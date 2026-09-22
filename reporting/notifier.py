@@ -26,14 +26,19 @@ def due_session(now: datetime, sent: set[tuple[str, str]]) -> str | None:
     return None
 
 
-async def market_summary_loop(application, chat_ids: tuple[int, ...]) -> None:
+async def market_summary_loop(application) -> None:
     """Send at most one summary per configured chat for each session/day."""
     sent: set[tuple[str, str]] = set()
     service = application.bot_data["strategy_service"]
+    store = application.bot_data["market_store"]
     while True:
         now = datetime.now(VIETNAM)
         session = due_session(now, sent)
         if session:
+            chat_ids = await asyncio.to_thread(store.notification_chat_ids)
+            if not chat_ids:
+                await asyncio.sleep(30)
+                continue
             day = now.date().isoformat()
             try:
                 summary, bars = await asyncio.to_thread(

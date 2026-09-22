@@ -44,6 +44,19 @@ def test_strategy_can_produce_a_backtest_without_portfolio_inputs() -> None:
     assert result.total_return is not None
 
 
+def test_backtest_uses_only_two_years_ending_at_as_of_date() -> None:
+    day = 86_400
+    bars = [Bar(day * index, index + 1, index + 1.2, index + .8,
+                index + 1, 1_000_000) for index in range(1, 1_001)]
+
+    result = run_backtest("HPG", bars, bars, as_of_ts=day * 1_000)
+
+    assert result.sessions == 731
+    assert result.buy_hold_return is not None
+    assert result.buy_hold_return < 3
+    assert "two_year_window" in result.notes
+
+
 def test_financial_company_detection_is_conservative_and_keeps_technical_signal() -> None:
     assert is_likely_financial_company("Ngân hàng TMCP Á Châu") is True
     assert is_likely_financial_company("NgÃ¢n hÃ ng TMCP Ã ChÃ¢u") is True
