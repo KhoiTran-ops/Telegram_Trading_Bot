@@ -185,10 +185,8 @@ def render_intraday_index(bars: list[Bar], session: str, output_dir: Path) -> Pa
     if len(bars) < 2:
         raise ValueError("Chưa đủ dữ liệu VN-Index trong phiên")
     output_dir.mkdir(parents=True, exist_ok=True)
-    figure, (price_ax, volume_ax) = plt.subplots(
-        2, 1, figsize=(12, 6.5), sharex=True,
-        gridspec_kw={"height_ratios": [4, 1]}, constrained_layout=True,
-    )
+    figure, price_ax = plt.subplots(figsize=(12, 6.5), constrained_layout=True)
+    volume_ax = price_ax.twinx()
     colors = []
     for x, bar in enumerate(bars):
         color = "#16a085" if bar.close >= bar.open else "#e74c3c"
@@ -204,13 +202,20 @@ def render_intraday_index(bars: list[Bar], session: str, output_dir: Path) -> Pa
     price_ax.set_title("VN-INDEX · Phiên sáng" if session == "MORNING" else "VN-INDEX · Cả ngày",
                        fontweight="bold")
     price_ax.set_ylabel("Điểm")
-    volume_ax.bar(range(len(bars)), [x.volume for x in bars], color=colors, width=.75)
-    volume_ax.set_ylabel("KL")
+    volumes = [x.volume for x in bars]
+    volume_ax.bar(range(len(bars)), volumes, color=colors, width=.75, alpha=.22)
+    volume_ax.set_ylim(0, max(volumes or [1]) * 4)
+    volume_ax.set_ylabel("KL", color="#7f8c8d")
+    volume_ax.tick_params(axis="y", colors="#7f8c8d", labelsize=8)
+    volume_ax.grid(False)
+    volume_ax.set_zorder(1)
+    price_ax.set_zorder(2)
+    price_ax.patch.set_alpha(0)
     ticks = sorted(set(round(i * (len(bars) - 1) / 7) for i in range(8)))
-    volume_ax.set_xticks(ticks, [datetime.fromtimestamp(bars[i].ts, VIETNAM).strftime("%H:%M") for i in ticks])
-    for axis in (price_ax, volume_ax):
-        axis.grid(alpha=.18, linewidth=.6)
-        axis.margins(x=.01)
+    price_ax.set_xticks(ticks, [datetime.fromtimestamp(bars[i].ts, VIETNAM).strftime("%H:%M") for i in ticks])
+    price_ax.grid(alpha=.18, linewidth=.6)
+    price_ax.margins(x=.01)
+    volume_ax.margins(x=.01)
     path = output_dir / f"VNINDEX_{session.lower()}_{uuid4().hex}.png"
     figure.savefig(path, dpi=150, facecolor="white")
     plt.close(figure)

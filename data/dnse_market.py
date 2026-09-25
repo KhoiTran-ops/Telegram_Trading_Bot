@@ -3,12 +3,15 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, time as clock_time, UTC
+import hashlib
+import hmac
 import logging
 import time
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from dnse import DnseClient, DnseMarketStream
+from dnse.stream.exceptions import DnseStreamAuthError
 
 from data.db.market_store import MarketStore
 from data.providers import ProviderUnavailableError
@@ -20,6 +23,42 @@ MARKETS = {"STO": "HOSE", "STX": "HNX", "UPX": "UPCOM"}
 VIETNAM = ZoneInfo("Asia/Ho_Chi_Minh")
 BENCHMARK_SYMBOL = "VNINDEX"
 FOREIGN_LOOKBACK_SECONDS = 730 * 24 * 60 * 60
+
+
+class CompatibleDNSEMarketStream(DnseMarketStream):
+    """Adapt dnse 0.5.0 wire messages to the current official gateway."""
+
+    async def _authenticate(self) -> None:
+        timestamp = int(time.time())
+        nonce = str(int(time.time() * 1_000_000))
+        payload = f"{self._api_key}:{timestamp}:{nonce}"
+        signature = hmac.new(
+            self._api_secret.encode(), payload.encode(), hashlib.sha256
+        ).hexdigest()
+        await self._ws.send(self._encoder.encode({
+            "action": "auth", "api_key": self._api_key,
+            "signature": signature, "timestamp": timestamp, "nonce": nonce,
+        }))
+        response = self._encoder.decode(await self._ws.recv())
+        if response.get("action") != "auth_success":
+            raise DnseStreamAuthError(str(
+                response.get("message") or "DNSE WebSocket authentication failed"
+            ))
+
+    async def _resubscribe(self) -> None:
+        for subscription in self._subscriptions:
+            await self._ws.send(self._encoder.encode({
+                "action": "subscribe", "channels": [subscription],
+            }))
+
+    async def _dispatch(self, message: dict[str, object]) -> None:
+        if (message.get("T") or message.get("t")) == "b":
+            message = {
+                **message,
+                "timestamp": message.get("timestamp") or message.get("time"),
+                "timeframe": message.get("timeframe") or message.get("resolution"),
+            }
+        await super()._dispatch(message)
 
 
 @dataclass(frozen=True)
@@ -228,17 +267,21 @@ class DNSEMarketService:
         self.api_secret = api_secret
         self.store = store
         self.queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=10_000)
-        self.streams: list[DnseMarketStream] = []
+        self.streams: list[CompatibleDNSEMarketStream] = []
         self.tasks: list[asyncio.Task[object]] = []
+        self.subscribed_symbols: set[str] = set()
 
     async def run(self) -> None:
         logger.info("DNSE backfill started", extra={
             "event": "dnse_backfill_started", "provider": "dnse",
             "operation": "backfill",
         })
-        foreign_task = asyncio.create_task(
-            self._foreign_loop(), name="dnse-foreign-poller"
-        )
+        self.tasks.extend((
+            asyncio.create_task(self._foreign_loop(), name="dnse-foreign-poller"),
+            asyncio.create_task(self._writer(), name="dnse-db-writer"),
+        ))
+        existing_symbols = [symbol for symbol, _exchange in self.store.list_instruments()]
+        self._subscribe_realtime([*existing_symbols, BENCHMARK_SYMBOL])
         gateway = DNSEGateway(self.api_key, self.api_secret)
         try:
             now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
@@ -255,24 +298,31 @@ class DNSEMarketService:
             gateway.close()
 
         symbols = [symbol for symbol, _exchange in self.store.list_instruments()]
-        stream_symbols = [*symbols, BENCHMARK_SYMBOL]
-        self.tasks.extend((foreign_task, asyncio.create_task(
-            self._writer(), name="dnse-db-writer"
-        )))
+        self._subscribe_realtime(symbols)
+        await asyncio.gather(*self.tasks)
+
+    def _subscribe_realtime(self, symbols: list[str]) -> None:
+        stream_symbols = [
+            symbol for symbol in symbols if symbol not in self.subscribed_symbols
+        ]
+        if not stream_symbols:
+            return
+        connection_offset = len(self.streams)
         for offset in range(0, len(stream_symbols), 200):
-            stream = DnseMarketStream(self.api_key, self.api_secret)
+            stream = CompatibleDNSEMarketStream(self.api_key, self.api_secret)
             stream.subscribe_ohlc(stream_symbols[offset:offset + 200], self._on_ohlc,
-                                  timeframe="1m")
+                                  timeframe="1")
             self.streams.append(stream)
             self.tasks.append(asyncio.create_task(
-                stream.run_async(), name=f"dnse-stream-{offset // 200 + 1}",
+                stream.run_async(),
+                name=f"dnse-stream-{connection_offset + offset // 200 + 1}",
             ))
+        self.subscribed_symbols.update(stream_symbols)
         logger.info("DNSE realtime started", extra={
             "event": "dnse_realtime_started", "provider": "dnse",
             "operation": "subscribe_ohlc", "symbols": len(stream_symbols),
             "connections": len(self.streams),
         })
-        await asyncio.gather(*self.tasks)
 
     async def _foreign_loop(self) -> None:
         gateway = DNSEGateway(self.api_key, self.api_secret, requests_per_second=1)

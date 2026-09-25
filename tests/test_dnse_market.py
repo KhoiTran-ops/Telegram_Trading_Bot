@@ -1,7 +1,12 @@
+import asyncio
+from contextlib import suppress
+import json
+
 import pytest
 
 from data.dnse_market import (
-    DNSEInstrument, DNSEMarketDataProvider, DNSESynchronizer,
+    CompatibleDNSEMarketStream, DNSEInstrument, DNSEMarketDataProvider,
+    DNSEMarketService, DNSESynchronizer,
     foreign_history_window, parse_foreign_trading, parse_ohlc,
 )
 from data.db.market_store import MarketStore
@@ -140,3 +145,102 @@ def test_foreign_history_window_never_requests_more_than_two_years() -> None:
     assert foreign_history_window(
         now, two_year_floor * 1000, listed_at=1_000_000_000
     ) is None
+
+
+@pytest.mark.asyncio
+async def test_compatible_stream_uses_current_dnse_auth_and_subscription_shape() -> None:
+    sent: list[dict[str, object]] = []
+    received = []
+
+    class Socket:
+        async def send(self, payload: str) -> None:
+            sent.append(json.loads(payload))
+
+        async def recv(self) -> str:
+            return json.dumps({"action": "auth_success"})
+
+    async def handler(message) -> None:
+        received.append(message)
+
+    stream = CompatibleDNSEMarketStream("key", "secret")
+    stream._ws = Socket()
+    stream.subscribe_ohlc(["HPG"], handler, timeframe="1")
+
+    await stream._authenticate()
+    await stream._resubscribe()
+    await stream._dispatch({
+        "T": "b", "symbol": "HPG", "time": 1_700_000_000,
+        "resolution": "1", "open": 10, "high": 11, "low": 9,
+        "close": 10.5, "volume": 100,
+    })
+
+    assert isinstance(sent[0]["nonce"], str)
+    assert sent[1] == {
+        "action": "subscribe",
+        "channels": [{"name": "ohlc.1.json", "symbols": ["HPG"]}],
+    }
+    assert received[0].timestamp == 1_700_000_000
+    assert received[0].timeframe == "1"
+
+
+@pytest.mark.asyncio
+async def test_realtime_subscription_starts_before_backfill_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backfill_release = asyncio.Event()
+    subscribed = asyncio.Event()
+
+    class Store:
+        def list_instruments(self):
+            return [("HPG", "HOSE")]
+
+    class Gateway:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    class Synchronizer:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def backfill(self, **_kwargs) -> int:
+            return 0
+
+    class Stream:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def subscribe_ohlc(self, *_args, **_kwargs) -> None:
+            subscribed.set()
+
+        async def run_async(self) -> None:
+            await asyncio.Future()
+
+        def stop(self) -> None:
+            pass
+
+    async def delayed_to_thread(function, *args, **kwargs):
+        await backfill_release.wait()
+        return function(*args, **kwargs)
+
+    async def idle_foreign_loop() -> None:
+        await asyncio.Future()
+
+    monkeypatch.setattr("data.dnse_market.DNSEGateway", Gateway)
+    monkeypatch.setattr("data.dnse_market.DNSESynchronizer", Synchronizer)
+    monkeypatch.setattr("data.dnse_market.CompatibleDNSEMarketStream", Stream)
+    monkeypatch.setattr("data.dnse_market.asyncio.to_thread", delayed_to_thread)
+    service = DNSEMarketService("key", "secret", Store())
+    monkeypatch.setattr(service, "_foreign_loop", idle_foreign_loop)
+
+    task = asyncio.create_task(service.run())
+    try:
+        await asyncio.wait_for(subscribed.wait(), timeout=1)
+        assert not backfill_release.is_set()
+    finally:
+        backfill_release.set()
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task

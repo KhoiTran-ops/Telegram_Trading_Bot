@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from telegram import Update
+from telegram.error import NetworkError
 
 from bot.application import create_application
 from common.config import Settings
@@ -12,6 +13,27 @@ from reporting.notifier import market_summary_loop
 
 
 logger = logging.getLogger(__name__)
+
+
+async def _initialize_with_retry(
+    application, *, delay_seconds: float = 5, sleep=asyncio.sleep,
+) -> None:
+    """Keep the bot alive while Telegram is temporarily unreachable."""
+    while True:
+        try:
+            await application.initialize()
+            return
+        except NetworkError as error:
+            logger.warning(
+                "Telegram initialization failed; retrying in %.0f seconds: %s",
+                delay_seconds,
+                error,
+                extra={
+                    "event": "telegram_initialize_retry",
+                    "error_type": type(error).__name__,
+                },
+            )
+            await sleep(delay_seconds)
 
 
 def _log_task_result(task: asyncio.Task) -> None:
@@ -64,7 +86,7 @@ async def run(application) -> None:
     )
 
     try:
-        await application.initialize()
+        await _initialize_with_retry(application)
         initialized = True
         if application.updater is None:
             raise RuntimeError("Telegram updater is not configured")

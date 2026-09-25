@@ -1,6 +1,8 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from data.db.market_store import MarketStore
 from signal_engine.service import StrategyService
 
@@ -49,3 +51,13 @@ def test_full_scan_uses_refreshed_snapshot_without_recalculation(tmp_path) -> No
     assert service.refresh_scan_snapshot() == 2
     assert service.scan(limit=None) == ["AAA", "BBB"]
     assert calls == ["AAA", "BBB"]
+
+
+def test_full_scan_does_not_recalculate_when_snapshot_is_still_loading(tmp_path) -> None:
+    service = StrategyService(tmp_path / "market.db")
+    service.repository.scan_symbols = lambda limit=None: pytest.fail(
+        "request handler must not start a full-market scan"
+    )
+
+    assert service.scan(limit=None) == []
+    assert service.scan_snapshot_ready is False

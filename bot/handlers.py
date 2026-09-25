@@ -171,6 +171,12 @@ async def filtered_scan_command(update: Update, context: ContextTypes.DEFAULT_TY
     if service is None:
         await _reply(update, SIGNAL_NOT_CONFIGURED_TEXT)
         return
+    if getattr(service, "scan_snapshot_ready", True) is False:
+        await _reply(
+            update,
+            "⏳ Snapshot toàn thị trường đang được khởi tạo. Vui lòng thử lại sau ít phút.",
+        )
+        return
     command = (update.effective_message.text or "").split()[0].lower() if update.effective_message else ""
     results = await asyncio.to_thread(service.scan, limit=None)
     buys = [item for item in results if item.action.endswith("BUY")]

@@ -334,6 +334,18 @@ async def test_filtered_scan_requests_the_full_market() -> None:
 
 
 @pytest.mark.asyncio
+async def test_filtered_scan_replies_immediately_while_snapshot_is_loading() -> None:
+    service = SimpleNamespace(scan_snapshot_ready=False)
+    update, context, reply_text = make_update_and_context(
+        strategy_service=service, message_text="/tinhieu",
+    )
+
+    await filtered_scan_command(update, context)
+
+    assert "snapshot" in reply_text.await_args.args[0].lower()
+
+
+@pytest.mark.asyncio
 async def test_notification_commands_persist_current_chat() -> None:
     class Store:
         def __init__(self):

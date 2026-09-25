@@ -34,7 +34,12 @@ class StrategyService:
     def __init__(self, database: Path) -> None:
         self.repository = StrategyRepository(database)
         self._scan_snapshot: tuple[SignalEvaluation, ...] = ()
+        self._scan_ready = False
         self._scan_lock = Lock()
+
+    @property
+    def scan_snapshot_ready(self) -> bool:
+        return self._scan_ready
 
     def evaluate(self, symbol: str, *, now: datetime | None = None) -> SignalEvaluation:
         normalized = symbol.strip().upper()
@@ -84,12 +89,10 @@ class StrategyService:
         )
 
     def scan(self, *, limit: int | None = 10) -> list[SignalEvaluation]:
-        if limit is None and self._scan_snapshot:
-            return list(self._scan_snapshot)
+        if limit is None:
+            return list(self._scan_snapshot) if self._scan_ready else []
         symbols = self.repository.scan_symbols(limit)
         results = [self.evaluate(symbol) for symbol in symbols]
-        if limit is None:
-            self._scan_snapshot = tuple(results)
         return results
 
     def refresh_scan_snapshot(self) -> int:
@@ -97,6 +100,7 @@ class StrategyService:
             symbols = self.repository.scan_symbols(None)
             results = tuple(self.evaluate(symbol) for symbol in symbols)
             self._scan_snapshot = results
+            self._scan_ready = True
         return len(results)
 
     def chart_bars(self, symbol: str):

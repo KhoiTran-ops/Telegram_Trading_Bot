@@ -2,7 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from reporting.charts import ChartOptions, parse_chart_args, render_candlestick
+from reporting.charts import (
+    ChartOptions, parse_chart_args, render_candlestick, render_intraday_index,
+)
 from signal_engine.engine import Bar
 
 
@@ -45,3 +47,17 @@ def test_render_candlestick_creates_a_centered_auto_scaled_png(tmp_path: Path) -
     )
     assert output.suffix == ".png"
     assert output.stat().st_size > 10_000
+
+
+def test_intraday_index_overlays_volume_in_the_price_panel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = []
+    monkeypatch.setattr("reporting.charts.plt.close", lambda figure: captured.append(figure))
+
+    output = render_intraday_index(sample_bars(30), "FULL_DAY", tmp_path)
+
+    assert output.stat().st_size > 10_000
+    figure = captured[0]
+    assert len(figure.axes) == 2
+    assert figure.axes[0].get_position().bounds == figure.axes[1].get_position().bounds
